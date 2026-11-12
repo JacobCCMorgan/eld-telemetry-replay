@@ -53,6 +53,11 @@ def test_odometer_regress_and_jump():
                   dict(sec=60, speed=50, rpm=1200, gps=50, miles=999.9), dict(sec=90, speed=50, rpm=1200, gps=50, miles=1010.0)])
     assert obs["odometer_regress"].tolist() == [False, False, True, False]
     assert obs["odometer_jump"].tolist() == [False, False, False, True]      # 10 miles in 30 s
+    # a zero reading is skipped, not a regression; the next valid reading is compared with the last valid one
+    obs, _ = run([dict(sec=0, speed=50, rpm=1200, gps=50, miles=1000.0), dict(sec=30, speed=50, rpm=1200, gps=50, miles=0.0), dict(sec=60, speed=50, rpm=1200, gps=50, miles=1000.8),
+                  dict(sec=90, mode="Sleeping", miles=0.0)])
+    assert obs["odometer_regress"].sum() == 0 and obs["odometer_jump"].sum() == 0
+    assert obs["odometer_zero"].tolist() == [False, True, False, False]
 
 
 def test_gap_while_driving_and_sleeping_while_moving():

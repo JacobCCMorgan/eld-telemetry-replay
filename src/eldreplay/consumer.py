@@ -14,7 +14,10 @@ ones a backend needs in real time:
 * ``speed_mismatch``: wheel speed and GPS speed both present and more than 15 km/h apart while
   either says the vehicle moves;
 * ``odometer_regress`` / ``odometer_jump``: engine miles decreasing, or increasing faster than
-  300 km/h would allow, between two consecutive reports of the same device;
+  300 km/h would allow, between two consecutive valid readings of the same device. A reading of 0
+  is not a reading: the device writes 0 when the ECM did not answer (almost every Sleeping report
+  carries 0 miles and 0 hours), so zeros are skipped and counted separately as ``odometer_zero``
+  when they occur while the vehicle is driving or idling;
 * ``gap_s`` / ``gap_while_driving``: seconds since the device's previous report, flagged when a
   device that was driving goes quiet for more than 90 s (three missed 30-second reports);
 * ``gps_invalid_moving``: wheel speed says moving while the GPS fix is flagged invalid;
@@ -40,7 +43,8 @@ GAP_S = 90.0
 ERR005_COOLDOWN_S = 3600.0
 ECM_FIELDS_SHIPPED = ("speed_kmh", "rpm", "engine_hours", "engine_miles")
 ECM_FIELDS_CORRECTED = ("speed_kmh", "rpm")
-COUNTED = ("ecm_silent", "err005_shipped_sent", "err005_corrected_sent", "speed_mismatch", "odometer_regress", "odometer_jump", "gap_while_driving", "gps_invalid_moving", "sleeping_while_moving")
+COUNTED = ("ecm_silent", "err005_shipped_sent", "err005_corrected_sent", "speed_mismatch", "odometer_regress", "odometer_jump", "odometer_zero",
+           "gap_while_driving", "gps_invalid_moving", "sleeping_while_moving")
 EVENT_MODES = {"UnidentifiedDriving", "UnidentifiedDrivingDiagnostic", "UnidentifiedClearedSpeed", "UnidentifiedClearedDriver", "PreOta", "ExitOta", "LowBattery", "Shipping"}
 
 
@@ -67,6 +71,7 @@ class DeviceTracker:
     last_ts: pd.Timestamp | None = None
     last_state: str | None = None
     last_miles: float | None = None
+    last_miles_ts: pd.Timestamp | None = None
     err005_shipped_until: pd.Timestamp | None = None
     err005_corrected_until: pd.Timestamp | None = None
     reports: int = 0
@@ -92,7 +97,7 @@ class DeviceTracker:
             "err005_shipped": missing_shipped, "err005_shipped_sent": False,
             "err005_corrected": missing_corrected, "err005_corrected_sent": False,
             "speed_mismatch": spd is not None and gps is not None and max(spd, gps) >= MOVING_KMH and abs(spd - gps) > SPEED_MISMATCH_KMH,
-            "odometer_regress": False, "odometer_jump": False,
+            "odometer_regress": False, "odometer_jump": False, "odometer_zero": r.engine_miles == 0 and state in ("driving", "idling"),
             "gap_s": gap, "gap_while_driving": gap is not None and gap > GAP_S and self.last_state == "driving",
             "gps_invalid_moving": r.gps_valid is False and (spd or 0.0) >= MOVING_KMH,
             "sleeping_while_moving": r.mode == "Sleeping" and (gps or 0.0) >= MOVING_KMH,
@@ -103,11 +108,13 @@ class DeviceTracker:
         if missing_corrected and (self.err005_corrected_until is None or r.ts >= self.err005_corrected_until):
             o["err005_corrected_sent"] = True
             self.err005_corrected_until = r.ts + pd.Timedelta(seconds=ERR005_COOLDOWN_S)
-        if r.engine_miles is not None and self.last_miles is not None and gap is not None and gap > 0:
+        miles_valid = r.engine_miles is not None and r.engine_miles > 0
+        if miles_valid and self.last_miles is not None and self.last_miles_ts is not None:
+            span = float((r.ts - self.last_miles_ts).total_seconds())
             delta = r.engine_miles - self.last_miles
             if delta < -0.01:
                 o["odometer_regress"] = True
-            elif delta * 1.609344 / (gap / 3600.0) > ODOMETER_MAX_KMH:
+            elif span > 0 and delta * 1.609344 / (span / 3600.0) > ODOMETER_MAX_KMH:
                 o["odometer_jump"] = True
         for k in COUNTED:
             if o[k]:
@@ -115,8 +122,8 @@ class DeviceTracker:
         self._bump(f"state_{state}")
         self.reports += 1
         self.last_ts, self.last_state = r.ts, state
-        if r.engine_miles is not None:
-            self.last_miles = r.engine_miles
+        if miles_valid:
+            self.last_miles, self.last_miles_ts = r.engine_miles, r.ts
         return o
 
 
