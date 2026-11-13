@@ -73,3 +73,14 @@ def test_devices_are_tracked_independently():
     assert obs.set_index(["device_key", "row_id"])["odometer_regress"].tolist() == [False, False, False, True]
     s = c.device_summary().set_index("device_key")
     assert s.loc["A", "reports"] == 2 and s.loc["B", "odometer_regress"] == 1 and s.loc["A", "state_driving"] == 2
+
+
+def test_frozen_ecm_frame():
+    # wheel speed and RPM repeat exactly while a valid GPS fix says the vehicle stands still
+    rows = [dict(sec=s, speed=125, rpm=4016, gps=0, miles=138029.69) for s in range(0, 150, 30)]
+    obs, c = run(rows)
+    assert obs["ecm_frozen"].tolist() == [False, True, True, True, True]     # the first report has nothing to compare with
+    assert obs["speed_mismatch"].all() and c.trackers["A"].counts["ecm_frozen"] == 4
+    # a vehicle that really stops: wheel speed falls with the GPS, nothing is frozen
+    obs, _ = run([dict(sec=0, speed=40, rpm=1500, gps=40), dict(sec=30, speed=12, rpm=900, gps=0), dict(sec=60, speed=12, rpm=900, gps=0)])
+    assert obs["ecm_frozen"].tolist() == [False, False, True]

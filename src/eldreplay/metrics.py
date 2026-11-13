@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-FLAGS = ["ecm_silent", "ecm_silent_rpm_or_speed", "err005_shipped", "err005_shipped_sent", "err005_corrected", "err005_corrected_sent", "speed_mismatch", "odometer_regress", "odometer_jump",
-         "odometer_zero", "gap_while_driving", "gps_invalid_moving", "sleeping_while_moving"]
+FLAGS = ["ecm_silent", "ecm_silent_rpm_or_speed", "err005_shipped", "err005_shipped_sent", "err005_corrected", "err005_corrected_sent", "speed_mismatch", "ecm_frozen",
+         "odometer_regress", "odometer_jump", "odometer_zero", "gap_while_driving", "gps_invalid_moving", "sleeping_while_moving"]
 STATES = ["driving", "idling", "stationary", "silent", "sleeping", "event"]
 
 
@@ -43,7 +43,7 @@ def group_summary(obs: pd.DataFrame, stream: pd.DataFrame) -> pd.DataFrame:
                                    devices_ecm_silent=("device_key", lambda s: m.loc[s.index][m.loc[s.index, "ecm_silent"]]["device_key"].nunique()),
                                    err005_shipped_events=("err005_shipped_sent", "sum"), err005_corrected_events=("err005_corrected_sent", "sum"),
                                    odometer_regress=("odometer_regress", "sum"), odometer_jump=("odometer_jump", "sum"), odometer_zero=("odometer_zero", "sum"),
-                                   speed_mismatch=("speed_mismatch", "sum"), stored=("is_stored", "sum"))
+                                   speed_mismatch=("speed_mismatch", "sum"), ecm_frozen=("ecm_frozen", "sum"), stored=("is_stored", "sum"))
     g["ecm_silent_share_of_driving"] = (g["ecm_silent"] / g["driving_reports"].where(g["driving_reports"] > 0)).round(4)
     g["stored_share"] = (g["stored"] / g["reports"]).round(4)
     return g.reset_index().sort_values("devices", ascending=False)

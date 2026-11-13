@@ -13,6 +13,10 @@ ones a backend needs in real time:
   on OBD-II vehicles, so the shipped rule misfires there);
 * ``speed_mismatch``: wheel speed and GPS speed both present and more than 15 km/h apart while
   either says the vehicle moves;
+* ``ecm_frozen``: wheel speed says moving, a valid GPS fix says the vehicle stands still, and speed
+  and RPM are exactly what the previous report carried: the ECM frame is stuck and the device
+  is reporting a drive that is not happening (found in the first fleet run: one device repeated
+  125 km/h and 4,016 RPM every 30 seconds for the whole window);
 * ``odometer_regress`` / ``odometer_jump``: engine miles decreasing, or increasing faster than
   300 km/h would allow, between two consecutive valid readings of the same device. A reading of 0
   is not a reading: the device writes 0 when the ECM did not answer (almost every Sleeping report
@@ -43,7 +47,7 @@ GAP_S = 90.0
 ERR005_COOLDOWN_S = 3600.0
 ECM_FIELDS_SHIPPED = ("speed_kmh", "rpm", "engine_hours", "engine_miles")
 ECM_FIELDS_CORRECTED = ("speed_kmh", "rpm")
-COUNTED = ("ecm_silent", "err005_shipped_sent", "err005_corrected_sent", "speed_mismatch", "odometer_regress", "odometer_jump", "odometer_zero",
+COUNTED = ("ecm_silent", "err005_shipped_sent", "err005_corrected_sent", "speed_mismatch", "ecm_frozen", "odometer_regress", "odometer_jump", "odometer_zero",
            "gap_while_driving", "gps_invalid_moving", "sleeping_while_moving")
 EVENT_MODES = {"UnidentifiedDriving", "UnidentifiedDrivingDiagnostic", "UnidentifiedClearedSpeed", "UnidentifiedClearedDriver", "PreOta", "ExitOta", "LowBattery", "Shipping"}
 
@@ -72,6 +76,8 @@ class DeviceTracker:
     last_state: str | None = None
     last_miles: float | None = None
     last_miles_ts: pd.Timestamp | None = None
+    last_speed: float | None = None
+    last_rpm: float | None = None
     err005_shipped_until: pd.Timestamp | None = None
     err005_corrected_until: pd.Timestamp | None = None
     reports: int = 0
@@ -97,6 +103,8 @@ class DeviceTracker:
             "err005_shipped": missing_shipped, "err005_shipped_sent": False,
             "err005_corrected": missing_corrected, "err005_corrected_sent": False,
             "speed_mismatch": spd is not None and gps is not None and max(spd, gps) >= MOVING_KMH and abs(spd - gps) > SPEED_MISMATCH_KMH,
+            "ecm_frozen": (spd or 0.0) >= MOVING_KMH and r.gps_valid is True and gps is not None and gps < STATIONARY_KMH
+            and self.last_speed is not None and spd == self.last_speed and r.rpm == self.last_rpm,
             "odometer_regress": False, "odometer_jump": False, "odometer_zero": r.engine_miles == 0 and state in ("driving", "idling"),
             "gap_s": gap, "gap_while_driving": gap is not None and gap > GAP_S and self.last_state == "driving",
             "gps_invalid_moving": r.gps_valid is False and (spd or 0.0) >= MOVING_KMH,
@@ -122,6 +130,7 @@ class DeviceTracker:
         self._bump(f"state_{state}")
         self.reports += 1
         self.last_ts, self.last_state = r.ts, state
+        self.last_speed, self.last_rpm = spd, r.rpm
         if miles_valid:
             self.last_miles, self.last_miles_ts = r.engine_miles, r.ts
         return o
