@@ -31,3 +31,11 @@ not a simulation; the numbers describe that fleet on that afternoon.
 Rows are sorted by `ts` then `device_key`; `row_id` is that order. The publishing script is
 `scripts/prepare_inputs.py`; it needs the raw export and the foundation key, neither of which is in
 the repository.
+
+## `ecm_priority_list_21def15.csv`
+
+The device priority list published by the ECM-disconnect project (`eld-ecm-disconnect`,
+`reports/priority_list.csv` at commit `21def15`): 182 devices with their tier (P1 to P4), ranked
+from three days of the platform's anomaly export in September 2026. Copied unchanged; the device
+keys share the foundation key, so they join this stream's `device_key` directly. Used by
+`eldreplay report` to measure the tiers on the raw stream, an independent data path.
