@@ -1,11 +1,17 @@
 """Late data: when offline reports reach the backend, and what a watermark does to trip segmentation.
 
 The export carries event time only. Reports flagged ``is_stored`` were written to the device's
-offline buffer and re-sent after it reconnected (the firmware log parser project saw the copies
-reach the backend 10 to 32 seconds after reconnection), so their arrival time is modelled as the
-event time of the device's next live report; a stored report with no later live report in the
-window arrives after the window ends. Live reports arrive at their event time. This is a model of
-arrival, stated as such; it is the only one the export supports.
+offline buffer and re-sent after it reconnected. The firmware log parser project saw live
+reporting resume at reconnection and the stored copies reach the backend 10 to 32 seconds later,
+so a stored report's arrival is modelled as the event time of the device's next live report plus
+``STORED_REPLAY_DELAY_S`` (20 s, the middle of that range); a stored report with no later live
+report in the window arrives after the window ends. Live reports arrive at their event time.
+This is a model of arrival, stated as such; it is the only one the export supports.
+
+The delay matters for one strategy. Without it every stored report would arrive before the live
+report that follows it, so a per-device consumer would still see its reports in event order and
+the ``arrival_order`` strategy would equal the oracle (the first fleet run showed exactly that).
+With it the live report arrives first and the backlog after, which is what the backend sees.
 
 Strategies replayed against the oracle (every report, event-time order):
 
@@ -25,12 +31,14 @@ import pandas as pd
 from . import replay, trips
 
 LATENESS_LEVELS = (0, 30, 60, 300, 900, math.inf)
+STORED_REPLAY_DELAY_S = 20.0
 
 
-def arrival_times(stream: pd.DataFrame) -> pd.DataFrame:
+def arrival_times(stream: pd.DataFrame, delay_s: float = STORED_REPLAY_DELAY_S) -> pd.DataFrame:
     """Return the stream with ``arrival_ts``, ``lateness_s`` and ``arrival_after_window`` columns."""
     s = stream.sort_values(["device_key", "ts"], kind="mergesort").copy()
     window_end = s["ts"].max()
+    delay = pd.Timedelta(seconds=delay_s)
     s["arrival_ts"] = s["ts"]
     s["arrival_after_window"] = False
     stored_idx = []
@@ -46,9 +54,9 @@ def arrival_times(stream: pd.DataFrame) -> pd.DataFrame:
         stored_idx.extend(st)
         arrivals.extend(arr)
     if stored_idx:
-        arr = pd.to_datetime(pd.Series(arrivals, index=stored_idx), utc=True)
+        arr = pd.to_datetime(pd.Series(arrivals, index=stored_idx), utc=True) + delay
         after = arr.isna()
-        arr[after] = window_end + pd.Timedelta(seconds=1)
+        arr[after] = window_end + delay
         s.loc[stored_idx, "arrival_ts"] = arr
         s.loc[stored_idx, "arrival_after_window"] = after.values
     s["lateness_s"] = (s["arrival_ts"] - s["ts"]).dt.total_seconds()
@@ -56,7 +64,8 @@ def arrival_times(stream: pd.DataFrame) -> pd.DataFrame:
 
 
 def lateness_summary(s: pd.DataFrame) -> dict:
-    late = s.loc[s["is_stored"], "lateness_s"]
+    """Lateness statistics over the stored reports that arrive inside the window; the ones that do not are counted, not timed."""
+    late = s.loc[s["is_stored"] & ~s["arrival_after_window"], "lateness_s"]
     ordered = s.sort_values(["device_key", "ts"], kind="mergesort")
     flag = ordered["is_stored"].astype(int)
     starts = (flag == 1) & (flag.groupby(ordered["device_key"]).shift(fill_value=0) == 0)
@@ -76,6 +85,13 @@ def trip_stats(seg: trips.TripSegmenter) -> dict:
     t = seg.trips()
     return {"trips": int(len(t)), "trip_hours": round(float(t["duration_s"].sum() / 3600), 2), "devices_with_trips": int(t["device_key"].nunique()),
             "trips_ended_by_gap": int((t["end_reason"] == "gap").sum()), "stops": int(len(seg.stops()))}
+
+
+def out_of_order(s: pd.DataFrame) -> int:
+    """Reports that reach a per-device consumer with an event time older than one it has already seen, in arrival order."""
+    o = replay.ordered(s)
+    seen = o.groupby("device_key")["ts"].cummax()
+    return int((o["ts"] < seen.groupby(o["device_key"]).shift()).sum())
 
 
 def _per_device_trip_counts(seg: trips.TripSegmenter) -> pd.Series:
@@ -98,13 +114,14 @@ def run_strategies(stream_with_arrival: pd.DataFrame, levels=LATENESS_LEVELS) ->
     s = stream_with_arrival
     oracle = trips.segment(replay.to_reports(s.drop(columns=["arrival_ts"])))
     rows = []
-    base = {"strategy": "oracle", "allowed_lateness_s": None, "records_kept": int(len(s)), "records_dropped": 0, **trip_stats(oracle), **compare(oracle, oracle)}
+    base = {"strategy": "oracle", "allowed_lateness_s": None, "records_kept": int(len(s)), "records_dropped": 0, "out_of_order": 0, **trip_stats(oracle), **compare(oracle, oracle)}
     rows.append(base)
     for L in levels:
         kept = s[s["lateness_s"] <= L] if math.isfinite(L) else s
         seg = trips.segment(replay.to_reports(kept.drop(columns=["arrival_ts"])))
         rows.append({"strategy": "drop_late", "allowed_lateness_s": None if math.isinf(L) else L, "records_kept": int(len(kept)), "records_dropped": int(len(s) - len(kept)),
-                     **trip_stats(seg), **compare(oracle, seg)})
+                     "out_of_order": 0, **trip_stats(seg), **compare(oracle, seg)})
     seg = trips.segment(replay.to_reports(s))      # arrival order, no reordering
-    rows.append({"strategy": "arrival_order", "allowed_lateness_s": None, "records_kept": int(len(s)), "records_dropped": 0, **trip_stats(seg), **compare(oracle, seg)})
+    rows.append({"strategy": "arrival_order", "allowed_lateness_s": None, "records_kept": int(len(s)), "records_dropped": 0, "out_of_order": out_of_order(s),
+                 **trip_stats(seg), **compare(oracle, seg)})
     return pd.DataFrame(rows)

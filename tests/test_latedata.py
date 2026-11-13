@@ -19,12 +19,14 @@ def make(rows):
 def test_arrival_model():
     f = make([("A", 0, 60, False), ("A", 30, 60, True), ("A", 60, 60, True), ("A", 300, 60, False), ("A", 330, 60, True), ("B", 0, 60, False)])
     a = latedata.arrival_times(f).set_index("row_id")
-    assert a.loc[1, "lateness_s"] == 270 and a.loc[2, "lateness_s"] == 240       # both arrive with the live report at 300 s
+    assert a.loc[1, "lateness_s"] == 290 and a.loc[2, "lateness_s"] == 260       # both arrive 20 s after the live report at 300 s
     assert a.loc[0, "lateness_s"] == 0 and a.loc[3, "lateness_s"] == 0
-    assert a.loc[4, "arrival_after_window"] and a.loc[4, "lateness_s"] == 1      # no later live report: arrives after the window
+    assert a.loc[4, "arrival_after_window"] and a.loc[4, "lateness_s"] == 20     # no later live report: arrives after the window
     s = latedata.lateness_summary(a.reset_index())
     assert s["stored_reports"] == 3 and s["devices_with_stored"] == 1 and s["offline_episodes"] == 2 and s["arrive_after_window"] == 1
-    assert s["lateness_s_max"] == 270
+    assert s["lateness_s_max"] == 290                                           # the after-window report is counted, not timed
+    assert latedata.arrival_times(f, delay_s=0).set_index("row_id").loc[1, "lateness_s"] == 270
+    assert latedata.out_of_order(a.reset_index()) == 2 and latedata.out_of_order(f) == 0     # rows 1 and 2 arrive after the live report at 300 s
 
 
 def test_dropping_late_records_splits_a_trip():
@@ -45,7 +47,13 @@ def test_dropping_late_records_splits_a_trip():
 
 
 def test_arrival_order_consumer_sees_time_going_backwards():
+    # offline from 05:00 to 14:30 while driving; the live report at 15:00 arrives first, the 20 stored copies 20 s later
     rows = [("A", s, 60, 300 <= s < 900) for s in range(0, 1200, 30)]
     res = latedata.run_strategies(latedata.arrival_times(make(rows)), levels=()).set_index("strategy")
-    assert res.loc["arrival_order", "records_dropped"] == 0
-    assert res.loc["arrival_order", "trips"] >= 1
+    arr = res.loc["arrival_order"]
+    assert arr["records_dropped"] == 0 and arr["out_of_order"] == 20
+    assert arr["trips"] == 2 and arr["trips_ended_by_gap"] == 1 and arr["devices_with_different_trip_count"] == 1     # the hole closes the trip before the backlog fills it
+    assert res.loc["oracle", "trips"] == 1
+    # the same stream with no replay delay: the backlog precedes the live report, nothing is out of order, the oracle is reproduced
+    res = latedata.run_strategies(latedata.arrival_times(make(rows), delay_s=0), levels=()).set_index("strategy")
+    assert res.loc["arrival_order", "out_of_order"] == 0 and res.loc["arrival_order", "trips"] == 1
