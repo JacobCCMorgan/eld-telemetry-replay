@@ -61,6 +61,7 @@ def analyze(stream: pd.DataFrame, priority: pd.DataFrame | None = None, lateness
 
 def fig_timeline(a: dict, path: Path):
     tl = a["timeline"].set_index("minute")
+    tl = tl[tl["devices_reporting"] >= 0.5 * tl["devices_reporting"].median()]      # drop the partial first or last minute of the window
     fig, ax = plt.subplots(figsize=(12, 4.4), facecolor=SURFACE)
     _style(ax)
     x = tl.index.tz_convert(LOCAL_TZ)
@@ -127,27 +128,32 @@ def fig_tiers(a: dict, path: Path):
 def fig_lateness(a: dict, path: Path):
     late = a["stored_lateness"]
     late = late.loc[~late["arrival_after_window"], "lateness_s"] / 60
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.2), facecolor=SURFACE)
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4.4), facecolor=SURFACE, gridspec_kw={"width_ratios": [1, 1.25]})
     ax = axes[0]
     _style(ax)
-    ax.hist(late.clip(upper=49), bins=np.arange(0, 50, 1), color="#2a78d6", linewidth=0)
-    ax.set_xlabel("minutes between event time and modelled arrival (49 = 49 or more)", color=INK2)
+    ax.hist(late.clip(upper=29), bins=np.arange(0, 30, 1), color="#2a78d6", linewidth=0)
+    ax.set_xlabel("minutes between event time and modelled arrival (29 = 29 or more)", color=INK2)
     ax.set_ylabel("stored reports", color=INK2)
     ax.set_title(f"How late offline reports arrive ({len(late):,} stored reports; median {late.median():.1f} min)", loc="left", fontsize=11, color=INK)
     ax = axes[1]
     _style(ax)
     s = a["strategies"]
     d = s[s["strategy"] == "drop_late"].copy()
-    d["label"] = d["allowed_lateness_s"].map(lambda v: "none" if pd.isna(v) else f"{int(v)} s")
+    d["label"] = [("none" if pd.isna(v) else f"{int(v)} s") + f"\n{int(n):,} dropped" for v, n in zip(d["allowed_lateness_s"], d["records_dropped"], strict=True)]
+    arr = s[s["strategy"] == "arrival_order"]
+    if len(arr):
+        arr = arr.assign(label=[f"unbuffered\n{int(arr['out_of_order'].iloc[0]):,} reordered"])
+        d = pd.concat([d, arr], ignore_index=True)
     x = list(range(len(d)))
-    ax.bar(x, d["devices_with_different_trip_count"], color="#eb6834", width=0.62, linewidth=0)
+    colors = ["#6250d6" if st == "arrival_order" else "#eb6834" for st in d["strategy"]]
+    ax.bar(x, d["devices_with_different_trip_count"], color=colors, width=0.62, linewidth=0)
     for i, row in enumerate(d.itertuples()):
-        ax.text(i, row.devices_with_different_trip_count + 1, f"{row.devices_with_different_trip_count}\n({row.records_dropped:,} dropped)", ha="center", fontsize=8.5, color=INK)
-    ax.set_xticks(x, d["label"])
-    ax.set_xlabel("allowed lateness (watermark)", color=INK2)
+        ax.text(i, row.devices_with_different_trip_count + 1, f"{row.devices_with_different_trip_count}", ha="center", fontsize=9, color=INK)
+    ax.set_xticks(x, d["label"], fontsize=8)
+    ax.set_xlabel("allowed lateness (watermark), or no buffering at all", color=INK2)
     ax.set_ylabel("devices whose trip count differs from the oracle", color=INK2)
-    ax.set_title("What dropping late reports does to trip segmentation", loc="left", fontsize=11, color=INK)
-    ax.set_ylim(0, max(d["devices_with_different_trip_count"].max() * 1.3, 5))
+    ax.set_title("Dropping late reports, or applying them unbuffered, versus the oracle", loc="left", fontsize=11, color=INK)
+    ax.set_ylim(0, max(d["devices_with_different_trip_count"].max() * 1.25, 5))
     _save(fig, path)
 
 
@@ -209,8 +215,12 @@ def _findings(stream: pd.DataFrame, a: dict, summary: dict) -> list[str]:
     tiers = a.get("tiers")
     gshare = g["ecm_silent_share_of_driving"]
     biggest = g["devices"].idxmax()
-    frozen = a["observations"][a["observations"]["ecm_frozen"]]
-    frozen_dev = frozen["device_key"].value_counts()
+    obs = a["observations"]
+    frozen_dev = obs.loc[obs["ecm_frozen"], "device_key"].value_counts()
+    worst = frozen_dev.index[0] if len(frozen_dev) else None
+    worst_mismatch = int(obs.loc[(obs["device_key"] == worst) & obs["speed_mismatch"]].shape[0]) if worst else 0
+    worst_group = stream.loc[stream["device_key"] == worst, "org_group"].iloc[0] if worst else "-"
+    frozen_devices = int(fl.loc["ecm_frozen", "devices"])
     ev = u["by_type"]
     out = []
     out.append(" ".join([
@@ -250,10 +260,10 @@ def _findings(stream: pd.DataFrame, a: dict, summary: dict) -> list[str]:
     ]))
     out.append(" ".join([
         f"**One device drove for two hours without moving.** GPS and wheel speed disagree by more than 15 km/h in {fl.loc['speed_mismatch', 'reports']} reports on",
-        f"{fl.loc['speed_mismatch', 'devices']} devices; {int(frozen_dev.iloc[0]) if len(frozen_dev) else 0} of them are one device (batch",
-        f"{stream.loc[stream['device_key'] == frozen_dev.index[0], 'org_group'].iloc[0] if len(frozen_dev) else '-'}) whose ECM frame is frozen: the same speed and RPM",
+        f"{fl.loc['speed_mismatch', 'devices']} devices; {worst_mismatch} of them are one device (batch {worst_group}) whose ECM frame is frozen: the same speed and RPM",
         f"in every report of the window while a valid GPS fix shows it standing still. The `ecm_frozen` check raises {fl.loc['ecm_frozen', 'reports']} reports on",
-        f"{fl.loc['ecm_frozen', 'devices']} devices in total; every one of those reports counts as driving in the platform's mileage and hours-of-service totals.",
+        f"{frozen_devices} device{'s' if frozen_devices != 1 else ''} in total; every one of those reports counts as driving in the platform's mileage and",
+        "hours-of-service totals. The other mismatches are mostly single reports around acceleration and braking, where the two sources lag each other.",
     ]))
     out.append(" ".join([
         f"**Half of the moving fleet has no driver logged in.** {u['moving_reports_without_driver']:,} moving reports ({_pct(u['share_of_moving_reports_without_driver'])}) from",

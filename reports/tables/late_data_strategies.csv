@@ -1,0 +1,9 @@
+strategy,allowed_lateness_s,records_kept,records_dropped,out_of_order,trips,trip_hours,devices_with_trips,trips_ended_by_gap,stops,devices_with_different_trip_count,trip_count_abs_diff,trip_hours_abs_diff
+oracle,,354874,0,0,2789,1915.25,1598,9,3173,0,0,0.0
+drop_late,0.0,347410,7464,0,2836,1893.02,1597,82,3160,58,67,23.2
+drop_late,30.0,347417,7457,0,2836,1893.02,1597,82,3160,58,67,23.2
+drop_late,60.0,348588,6286,0,2837,1893.55,1597,82,3161,57,66,22.63
+drop_late,300.0,352668,2206,0,2834,1900.18,1598,72,3165,45,51,15.37
+drop_late,900.0,354376,498,0,2790,1913.88,1598,13,3171,4,5,1.72
+drop_late,,354874,0,0,2789,1915.25,1598,9,3173,0,0,0.0
+arrival_order,,354874,0,7452,2864,1894.67,1598,84,3176,65,77,21.05

@@ -1,0 +1,124 @@
+{
+  "stream": {
+    "reports": 354874,
+    "devices": 2191,
+    "window_start_utc": "2026-09-28T16:59:57+00:00",
+    "window_end_utc": "2026-09-28T18:59:57+00:00"
+  },
+  "cadence": {
+    "intervals": 352683,
+    "median_s": 30.0,
+    "p90_s": 32.0,
+    "p99_s": 298.0,
+    "share_within_35s": 0.9374,
+    "driving_intervals": 329397,
+    "driving_share_within_35s": 0.9821,
+    "gaps_over_90s_while_driving": 41,
+    "devices_with_gap_while_driving": 19
+  },
+  "unidentified": {
+    "event_records": 2648,
+    "by_type": {
+      "unidentified_driving": 900,
+      "unidentified_driving_diagnose": 863,
+      "unidentified_driving_clear_speed": 718,
+      "unidentified_driving_clear_driver": 167
+    },
+    "devices_with_unidentified_driving_event": 689,
+    "moving_reports_without_driver": 101901,
+    "devices_moving_without_driver": 1080,
+    "share_of_moving_reports_without_driver": 0.4866
+  },
+  "trips": {
+    "trips": 2789,
+    "devices_with_trips": 1598,
+    "complete_trips": 1137,
+    "truncated_start": 896,
+    "truncated_end": 1067,
+    "end_reasons": {
+      "stop": 1208,
+      "window": 1067,
+      "sleep": 505,
+      "gap": 9
+    },
+    "trip_hours": 1915.3,
+    "complete_trip_minutes_median": 5.3,
+    "complete_trip_miles_median": 0.4,
+    "stops": 3173,
+    "stop_minutes_median": 22.6,
+    "driving_to_sleeping_transitions": 1013
+  },
+  "late_data": {
+    "reports": 354874,
+    "stored_reports": 7464,
+    "stored_share": 0.021,
+    "devices_with_stored": 1154,
+    "devices": 2191,
+    "offline_episodes": 3527,
+    "arrive_after_window": 12,
+    "lateness_s_median": 112.0,
+    "lateness_s_p90": 776.0,
+    "lateness_s_max": 2841.0,
+    "share_within_60s": 0.1581,
+    "share_within_300s": 0.7049,
+    "share_within_900s": 0.934
+  },
+  "checks": {
+    "ecm_silent": {
+      "reports": 4291,
+      "devices": 58
+    },
+    "ecm_silent_rpm_or_speed": {
+      "reports": 4612,
+      "devices": 61
+    },
+    "err005_shipped": {
+      "reports": 4613,
+      "devices": 62
+    },
+    "err005_shipped_sent": {
+      "reports": 85,
+      "devices": 62
+    },
+    "err005_corrected": {
+      "reports": 4612,
+      "devices": 61
+    },
+    "err005_corrected_sent": {
+      "reports": 84,
+      "devices": 61
+    },
+    "speed_mismatch": {
+      "reports": 979,
+      "devices": 410
+    },
+    "ecm_frozen": {
+      "reports": 238,
+      "devices": 1
+    },
+    "odometer_regress": {
+      "reports": 114,
+      "devices": 3
+    },
+    "odometer_jump": {
+      "reports": 136,
+      "devices": 12
+    },
+    "odometer_zero": {
+      "reports": 556,
+      "devices": 5
+    },
+    "gap_while_driving": {
+      "reports": 41,
+      "devices": 19
+    },
+    "gps_invalid_moving": {
+      "reports": 104,
+      "devices": 34
+    },
+    "sleeping_while_moving": {
+      "reports": 0,
+      "devices": 0
+    }
+  }
+}

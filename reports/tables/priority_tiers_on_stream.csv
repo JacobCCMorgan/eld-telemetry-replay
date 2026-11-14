@@ -1,0 +1,5 @@
+tier,devices,in_stream,reports,driving_reports,ecm_silent,devices_silent,ecm_silent_share_of_driving
+P1,27,20,1935.0,1311.0,1101.0,11,0.84
+P2,18,14,1823.0,1175.0,238.0,3,0.203
+P3,19,15,2308.0,1262.0,0.0,0,0.0
+P4,118,86,14410.0,9291.0,221.0,4,0.024

@@ -1,0 +1,15 @@
+check,reports,share_of_reports,devices,share_of_devices
+ecm_silent,4291,0.01209,58,0.0265
+ecm_silent_rpm_or_speed,4612,0.013,61,0.0278
+err005_shipped,4613,0.013,62,0.0283
+err005_shipped_sent,85,0.00024,62,0.0283
+err005_corrected,4612,0.013,61,0.0278
+err005_corrected_sent,84,0.00024,61,0.0278
+speed_mismatch,979,0.00276,410,0.1871
+ecm_frozen,238,0.00067,1,0.0005
+odometer_regress,114,0.00032,3,0.0014
+odometer_jump,136,0.00038,12,0.0055
+odometer_zero,556,0.00157,5,0.0023
+gap_while_driving,41,0.00012,19,0.0087
+gps_invalid_moving,104,0.00029,34,0.0155
+sleeping_while_moving,0,0.0,0,0.0
